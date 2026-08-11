@@ -1,4 +1,4 @@
-# claude-skills
+# agent-skills
 
 에이전트 코딩 도구용 스킬 모음. [Claude Code](https://claude.com/claude-code)에서 네이티브로 시작했지만, 각 스킬의 핵심 워크플로우는 `AGENTS.md`에 도구 중립적으로 정리되어 있어 [Cursor](https://cursor.com), [Codex CLI](https://developers.openai.com/codex) 등 다른 에이전트 도구에서도 쓸 수 있다.
 
@@ -30,7 +30,7 @@
 
 ```bash
 git clone <이 레포 URL>
-cd claude-skills
+cd agent-skills
 
 ln -s "$PWD/functional-frontend" ~/.claude/skills/functional-frontend
 ln -s "$PWD/pr-ui-review" ~/.claude/skills/pr-ui-review
