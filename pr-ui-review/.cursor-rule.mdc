@@ -1,0 +1,11 @@
+---
+description: GitHub PR의 UI 변경을 before/after 스크린샷으로 비교하고, 실제로 달라진 영역에만 번호 붙은 박스를 그려 PR 코멘트로 게시합니다. base 브랜치를 git worktree로 띄워 현재 브랜치와 같은 화면을 캡처하고, 픽셀 diff로 변경 영역을 찾은 뒤 각 박스에 설명을 답니다. PR을 올릴 때, UI/스타일/컴포넌트를 수정했을 때, "화면 뭐가 바뀌었는지 보여줘", "스크린샷 붙여줘", "리뷰어가 보기 쉽게" 같은 요청에 사용하세요.
+globs:
+alwaysApply: false
+---
+
+# pr-ui-review
+
+이 규칙과 관련된 요청이면, `{SKILL_PATH}/AGENTS.md`를 먼저 읽고 그 안의 0~8단계를 순서대로 그대로 따른다. 그 문서가 가리키는 `references/*.md`, `scripts/*.mjs`, `scripts/*.sh`도 전부 `{SKILL_PATH}` 아래에 있다.
+
+> 설치 시 `{SKILL_PATH}`를 이 스킬 폴더의 실제 경로로 바꿔둔다 (예: `.cursor/skills/pr-ui-review`).

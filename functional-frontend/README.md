@@ -15,12 +15,32 @@
 
 ## 설치
 
+워크플로우 본문은 [`AGENTS.md`](./AGENTS.md)에 있다. 도구마다 이 문서를 트리거하는 방식만 다르다.
+
+### Claude Code
+
 ```bash
-# 스킬로 등록
 ln -s "$PWD/functional-frontend" ~/.claude/skills/functional-frontend
 ```
 
-Claude Code에서 "장바구니 기능 만들어줘", "이 useEffect 정리해줘" 같은 요청에 자동으로 걸린다.
+`SKILL.md`의 frontmatter(`description`)를 보고 "장바구니 기능 만들어줘", "이 useEffect 정리해줘" 같은 요청에 자동으로 걸린다. `SKILL.md`는 `AGENTS.md`를 읽으라고 안내하는 얇은 어댑터다.
+
+### Cursor
+
+```bash
+mkdir -p <프로젝트>/.cursor/skills
+cp -r functional-frontend <프로젝트>/.cursor/skills/functional-frontend
+mkdir -p <프로젝트>/.cursor/rules
+cp <프로젝트>/.cursor/skills/functional-frontend/.cursor-rule.mdc \
+   <프로젝트>/.cursor/rules/functional-frontend.mdc
+# .mdc 안의 {SKILL_PATH}를 .cursor/skills/functional-frontend 로 치환
+```
+
+`description` frontmatter를 근거로 관련 있는 요청에서 Cursor가 자동으로 규칙을 붙인다(Agent Requested).
+
+### Codex CLI / 그 외
+
+조건부 자동 로딩이 없는 도구는 필요할 때 직접 지시한다: "`functional-frontend/AGENTS.md`를 읽고 그대로 따라줘." 자주 쓴다면 프로젝트의 `AGENTS.md`에 이 파일 링크를 남겨둔다.
 
 ## ESLint 프리셋만 따로 쓰기
 
@@ -100,8 +120,10 @@ npm run test:fixtures # 프리셋 통합 검증 — 실제 파일에 실제 esli
 
 ```
 functional-frontend/
-├── SKILL.md              워크플로우 (0~5단계 + 리팩토링/셋업 모드)
-├── references/           필요할 때 읽는 문서 6종
-├── eslint/               ESLint 프리셋 + 커스텀 규칙 + 테스트
-└── assets/               프로젝트에 복사할 설정 템플릿, CLAUDE.md 스니펫
+├── AGENTS.md              워크플로우 본문 (0~5단계 + 리팩토링/셋업 모드) — 도구 중립
+├── SKILL.md               Claude Code 어댑터 (frontmatter + AGENTS.md로 안내)
+├── .cursor-rule.mdc        Cursor 어댑터 템플릿
+├── references/            필요할 때 읽는 문서 6종
+├── eslint/                ESLint 프리셋 + 커스텀 규칙 + 테스트
+└── assets/                프로젝트에 복사할 설정 템플릿, CLAUDE.md 스니펫
 ```

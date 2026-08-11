@@ -1,0 +1,11 @@
+---
+description: "쏙쏙 들어오는 함수형 코딩(Grokking Simplicity)"의 원칙 — 액션/계산/데이터 분리, 카피-온-라이트, 계층형 설계, 타임라인 — 으로 React + TypeScript 코드를 작성하고 리팩토링합니다. ESLint 프리셋이 함께 있어 작성한 코드를 기계적으로 검증합니다. 프론트엔드 기능을 새로 만들거나, 코드 구조·관심사 분리·상태 관리를 정리하거나, useEffect나 이벤트 핸들러가 지저분해서 손보거나, 부수효과와 로직이 엉킨 코드를 풀거나, 새 React 프로젝트의 코드 규칙을 세울 때 사용하세요.
+globs:
+alwaysApply: false
+---
+
+# functional-frontend
+
+이 규칙과 관련된 요청이면, `{SKILL_PATH}/AGENTS.md`를 먼저 읽고 그 안의 0~5단계(및 필요시 리팩토링 모드/셋업 모드)를 그대로 따른다. 그 문서가 가리키는 `references/*.md`, `eslint/`, `assets/`도 전부 `{SKILL_PATH}` 아래에 있다.
+
+> 설치 시 `{SKILL_PATH}`를 이 스킬 폴더의 실제 경로로 바꿔둔다 (예: `.cursor/skills/functional-frontend`).
