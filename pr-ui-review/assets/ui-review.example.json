@@ -1,0 +1,53 @@
+{
+  "$comment": "대상 레포의 .claude/ui-review.json 에 둡니다. 전체 스키마는 references/config.md 참고.",
+
+  "install": "npm ci",
+
+  "dev": {
+    "command": "npm run dev",
+    "port": 3000,
+    "portEnv": "PORT",
+    "readyPath": "/",
+    "timeoutMs": 120000
+  },
+
+  "viewport": {
+    "width": 1440,
+    "height": 900,
+    "deviceScaleFactor": 2
+  },
+
+  "auth": {
+    "storageStatePath": ".claude/ui-review.auth.json"
+  },
+
+  "stabilize": {
+    "disableAnimations": true,
+    "mask": [
+      "[data-testid='relative-time']",
+      ".avatar-random"
+    ]
+  },
+
+  "diff": {
+    "threshold": 0.1,
+    "minArea": 400,
+    "maxBoxes": 8,
+    "mergeGap": 24
+  },
+
+  "routes": [
+    {
+      "name": "checkout",
+      "path": "/checkout",
+      "match": ["src/features/checkout/**", "src/components/PayButton.tsx"],
+      "waitFor": "[data-testid='order-summary']"
+    },
+    {
+      "name": "product-list",
+      "path": "/products?sort=new",
+      "match": ["src/features/products/**", "src/components/ProductCard.tsx"],
+      "waitMs": 500
+    }
+  ]
+}

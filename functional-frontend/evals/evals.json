@@ -1,0 +1,23 @@
+{
+  "skill_name": "functional-frontend",
+  "evals": [
+    {
+      "id": 0,
+      "name": "new-feature-cart",
+      "prompt": "React + TypeScript 프로젝트에 장바구니 기능을 만들어줘. 상품 담기/빼기, 수량 변경, 총액 계산(부가세 10%, 5만원 이상 무료배송 아니면 3000원)이 필요해. 주문하기 누르면 POST /api/orders 로 총액이랑 항목 보내고, 주문 시각도 같이 기록해야 해. 새로 시작하는 프로젝트라 src/ 밑은 아직 비어있어.",
+      "expected_output": "액션/계산/데이터가 분리되어 총액 계산이 순수 함수로 존재하고, fetch와 Date.now가 계산 코드에서 분리되어 있을 것"
+    },
+    {
+      "id": 1,
+      "name": "refactor-useeffect",
+      "prompt": "이 컴포넌트 좀 정리해줘. useEffect 안이 너무 지저분하고 테스트도 못 짜겠어.\n\n```tsx\nexport const OrderList = ({ userId }: { userId: string }) => {\n  const [orders, setOrders] = useState<Order[]>([]);\n  const [total, setTotal] = useState(0);\n\n  useEffect(() => {\n    fetch(`/api/orders?user=${userId}`)\n      .then((r) => r.json())\n      .then((data: Order[]) => {\n        const recent = data.filter((o) => o.placedAt > Date.now() - 7 * 24 * 3600 * 1000);\n        recent.sort((a, b) => b.placedAt - a.placedAt);\n        const top = recent.slice(0, 10);\n        setOrders(top);\n        let sum = 0;\n        for (let i = 0; i < top.length; i++) {\n          sum += top[i].amount;\n        }\n        setTotal(sum);\n      });\n  }, [userId]);\n\n  return <div>{orders.map((o) => <Row key={o.id} order={o} />)}</div>;\n};\n```",
+      "expected_output": "필터/정렬/집계가 순수 함수로 추출되고, Date.now가 인자로 주입되며, 파생 상태(total)가 useState에서 제거될 것"
+    },
+    {
+      "id": 2,
+      "name": "impure-utils-cleanup",
+      "prompt": "utils.ts 가 점점 엉망이 되고 있어서 손보고 싶은데 어디부터 건드려야 할지 모르겠어. 기존 서비스라 한번에 다 갈아엎을 수는 없고 점진적으로 하고 싶어.\n\n```ts\nlet currentRate = 0.1;\n\nexport function setRate(r: number) { currentRate = r; }\n\nexport function priceWithTax(p: number) { return p * (1 + currentRate); }\n\nexport function addToHistory(history: string[], entry: string) {\n  history.push(`${new Date().toISOString()} ${entry}`);\n  return history;\n}\n\nexport function makeSessionId() {\n  return Math.random().toString(36).slice(2) + Date.now();\n}\n\nexport function sortByPrice(items: Item[]) {\n  return items.sort((a, b) => a.price - b.price);\n}\n```",
+      "expected_output": "암묵적 입력(currentRate) 제거, 원본 변경(push/sort) 제거, 시간·난수 분리, 점진 도입 전략 제시"
+    }
+  ]
+}

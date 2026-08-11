@@ -1,0 +1,10 @@
+{
+  "name": "pr-ui-review-scripts",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Runtime for the pr-ui-review skill. Installed inside the skill directory only — never in the target repository.",
+  "dependencies": {
+    "playwright": "1.56.0"
+  }
+}
