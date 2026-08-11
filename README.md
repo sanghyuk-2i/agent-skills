@@ -6,6 +6,7 @@
 |---|---|
 | [`functional-frontend`](functional-frontend) | "쏙쏙 들어오는 함수형 코딩"(Grokking Simplicity)의 원칙 — 액션/계산/데이터 분리, 카피-온-라이트, 계층형 설계 — 으로 React + TypeScript 코드를 작성·리팩토링. 원칙을 기계적으로 검증하는 ESLint 프리셋 포함 |
 | [`pr-ui-review`](pr-ui-review) | GitHub PR의 UI 변경을 base/head 스크린샷으로 비교하고, 실제로 달라진 영역에만 박스를 그려 PR 코멘트로 게시 |
+| [`doodle-status-prompt`](doodle-status-prompt) | 미니멀 흑백 손그림 캐릭터(원형 얼굴·점 눈·헤드셋)가 특정 상황에 놓인 모습을 그리게 하는 이미지 생성 프롬프트(Nano Banana, Midjourney 등용)를 생성. 블로그 삽화, Slack/Notion 상태 아이콘용 |
 
 ## 구조
 
@@ -34,6 +35,7 @@ cd agent-skills
 
 ln -s "$PWD/functional-frontend" ~/.claude/skills/functional-frontend
 ln -s "$PWD/pr-ui-review" ~/.claude/skills/pr-ui-review
+ln -s "$PWD/doodle-status-prompt" ~/.claude/skills/doodle-status-prompt
 ```
 
 ### Cursor

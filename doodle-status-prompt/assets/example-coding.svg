@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 260" width="240" height="260">
+  <rect width="240" height="260" fill="white"/>
+  <g fill="none" stroke="black" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+    <!-- headset headband -->
+    <path d="M88,56 Q120,18 152,56"/>
+    <!-- ear pads -->
+    <ellipse cx="86" cy="64" rx="9" ry="13"/>
+    <ellipse cx="154" cy="64" rx="9" ry="13"/>
+    <!-- mic boom -->
+    <path d="M86,76 Q96,98 110,90"/>
+    <!-- head -->
+    <circle cx="120" cy="68" r="30"/>
+    <!-- torso -->
+    <path d="M92,98 C80,118 78,150 86,176 L154,176 C162,150 160,118 148,98 Z"/>
+    <!-- arms to keyboard -->
+    <path d="M92,120 C78,135 72,150 78,168"/>
+    <path d="M148,120 C162,135 168,150 162,168"/>
+    <!-- laptop -->
+    <path d="M70,172 L170,172 L182,200 L58,200 Z"/>
+    <path d="M84,172 L84,138 L156,138 L156,172"/>
+    <!-- motion lines above hands -->
+    <path d="M70,158 L64,152 M78,152 L74,144"/>
+    <path d="M170,158 L176,152 M162,152 L166,144"/>
+  </g>
+  <!-- eyes -->
+  <circle cx="109" cy="64" r="3" fill="black"/>
+  <circle cx="131" cy="64" r="3" fill="black"/>
+  <!-- mic tip -->
+  <circle cx="110" cy="90" r="3" fill="black"/>
+</svg>

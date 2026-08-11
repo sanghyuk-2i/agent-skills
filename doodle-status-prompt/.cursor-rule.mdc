@@ -1,0 +1,11 @@
+---
+description: Generates an English image-generation prompt (for Nano Banana, Midjourney, DALL-E, etc.) for a minimalist black-and-white hand-drawn doodle character wearing over-ear headphones, depicting a specific status/situation — for use as blog illustrations or Slack/Notion status icons. Use when the user describes a situation and wants a matching doodle-style image prompt, or explicitly mentions "상태 캐릭터", "낙서 스타일", "doodle prompt", or the reference character with circle head + dot eyes + headset.
+globs:
+alwaysApply: false
+---
+
+# doodle-status-prompt
+
+이 규칙과 관련된 요청이면, `{SKILL_PATH}/AGENTS.md`를 먼저 읽고 그 안의 워크플로우와 템플릿을 그대로 따른다. `assets/*.svg`, `README.md`도 `{SKILL_PATH}` 아래에 있다.
+
+> 설치 시 `{SKILL_PATH}`를 이 스킬 폴더의 실제 경로로 바꿔둔다 (예: `.cursor/skills/doodle-status-prompt`).
