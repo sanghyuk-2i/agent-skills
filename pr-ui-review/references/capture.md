@@ -48,7 +48,7 @@
 ```bash
 node scripts/capture.mjs --base-url http://localhost:3000 --head-url http://localhost:3000 \
   --out-dir /tmp/selfcheck --routes checkout
-node scripts/annotate.mjs --before /tmp/selfcheck/checkout.before.png \
+node scripts/analyze.mjs --before /tmp/selfcheck/checkout.before.png \
   --after /tmp/selfcheck/checkout.after.png --out-dir /tmp/selfcheck --name selfcheck
 ```
 
@@ -56,7 +56,7 @@ node scripts/annotate.mjs --before /tmp/selfcheck/checkout.before.png \
 
 ## 세로 이동 보정 (`shifted`)
 
-`annotate.mjs`는 각 diff 영역에 대해 "before의 같은 내용이 dy만큼 위/아래에 그대로 있는가"를 ±400px 범위에서 찾는다. 찾으면 변경이 아니라 **이동**으로 분류해 빨간 박스에서 빼고 `shifted: [{y, height, dy}]`로 보고한다.
+`analyze.mjs`는 각 diff 영역에 대해 "before의 같은 내용이 dy만큼 위/아래에 그대로 있는가"를 ±400px 범위에서 찾는다. 찾으면 변경이 아니라 **이동**으로 분류해 빨간 박스에서 빼고 `shifted: [{y, height, dy}]`로 보고한다.
 
 버튼 하나가 8px 높아지면 그 아래 모든 요소가 8px씩 밀린다. 보정이 없으면 박스가 10개 나오고 리뷰어는 어디를 봐야 할지 모른다. 보정 후에는 박스 1개 + "그 아래 영역이 8px 내려감" 한 줄이 된다.
 

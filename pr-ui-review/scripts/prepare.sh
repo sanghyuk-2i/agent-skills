@@ -46,13 +46,13 @@ find_free_port() {
   echo "$p"
 }
 wait_ready() {
-  local url=$1 pid=$2 log_file=$3 deadline=$((SECONDS + TIMEOUT_MS / 1000))
+  local url=$1 pid=$2 log_file=$3 deadline=$((SECONDS + (TIMEOUT_MS + 999) / 1000))
   while (( SECONDS < deadline )); do
     if ! kill -0 "$pid" 2>/dev/null; then
       log "서버가 죽었습니다. 로그 마지막 40줄:"; tail -40 "$log_file" >&2; return 1
     fi
     if curl -sfo /dev/null --max-time 3 "$url"; then return 0; fi
-    sleep 1
+    sleep 0.2
   done
   log "타임아웃: $url 가 응답하지 않습니다. 로그 마지막 40줄:"; tail -40 "$log_file" >&2; return 1
 }
@@ -73,7 +73,7 @@ else
     || git worktree add --detach "$BASE_TREE" "$BASE_SHA"
 fi
 
-# ── 2. base 의존성 설치 (lockfile이 head와 같으면 node_modules를 심볼릭 링크로 공유) ──
+# ── 2. base 의존성 설치 (lockfile이 head와 같으면 node_modules를 복제해서 설치를 생략) ──
 if [[ -n "$INSTALL" ]]; then
   LOCK=""
   for f in package-lock.json pnpm-lock.yaml yarn.lock bun.lockb; do
@@ -81,8 +81,12 @@ if [[ -n "$INSTALL" ]]; then
   done
   if [[ -n "$LOCK" && -d "$REPO_ROOT/node_modules" ]] \
      && cmp -s "$REPO_ROOT/$LOCK" "$BASE_TREE/$LOCK" && [[ ! -e "$BASE_TREE/node_modules" ]]; then
-    log "lockfile이 동일 → head의 node_modules를 링크 (설치 생략)"
-    ln -s "$REPO_ROOT/node_modules" "$BASE_TREE/node_modules"
+    # 심볼릭 링크는 Next.js(Turbopack)가 "points out of the filesystem root"로 거부한다 → 복제한다.
+    # APFS/btrfs에서는 CoW 클론이라 빠르고 디스크도 거의 안 쓴다. 클론이 안 되면 일반 복사.
+    log "lockfile이 동일 → head의 node_modules를 복제 (설치 생략)"
+    cp -Rc "$REPO_ROOT/node_modules" "$BASE_TREE/node_modules" 2>/dev/null \
+      || cp -R --reflink=auto "$REPO_ROOT/node_modules" "$BASE_TREE/node_modules" 2>/dev/null \
+      || { rm -rf "$BASE_TREE/node_modules"; cp -R "$REPO_ROOT/node_modules" "$BASE_TREE/node_modules"; }
   elif [[ ! -d "$BASE_TREE/node_modules" ]]; then
     log "base 의존성 설치: $INSTALL (시간이 걸립니다)"
     ( cd "$BASE_TREE" && eval "$INSTALL" ) >"$WORK/install.log" 2>&1 \
@@ -91,6 +95,18 @@ if [[ -n "$INSTALL" ]]; then
     log "base node_modules 재사용"
   fi
 fi
+
+# ── 2.5 gitignore된 .env* 복사 ─────────────────────────────────────────────
+# worktree는 추적 파일만 가져와서 .env가 없다 → base만 환경변수가 비어 화면이 달라지는 가짜 diff가 생긴다.
+# 추적되지 않는 .env* 만 temp의 worktree로 복사한다 (대상 레포는 건드리지 않는다).
+for envf in "$REPO_ROOT"/.env*; do
+  [[ -f "$envf" ]] || continue
+  name=$(basename "$envf")
+  if ! git -C "$REPO_ROOT" ls-files --error-unmatch "$name" >/dev/null 2>&1 && [[ ! -e "$BASE_TREE/$name" ]]; then
+    cp "$envf" "$BASE_TREE/$name"
+    log "$name 을 base worktree로 복사 (추적되지 않는 파일)"
+  fi
+done
 
 # ── 3. 서버 기동 ─────────────────────────────────────────────────────────────
 HEAD_PORT=$PORT
@@ -104,14 +120,22 @@ else
   log "head 서버 기동: port $HEAD_PORT"
   ( cd "$REPO_ROOT" && env "$PORT_ENV=$HEAD_PORT" bash -c "$DEV" ) >"$WORK/head.log" 2>&1 &
   HEAD_PID=$!
-  wait_ready "http://localhost:$HEAD_PORT$READY_PATH" "$HEAD_PID" "$WORK/head.log" || exit 1
 fi
 
+# base 포트는 head보다 항상 크므로, head가 아직 포트를 잡기 전이어도 충돌하지 않는다
 BASE_PORT=$(find_free_port $((HEAD_PORT + 1)))
 log "base 서버 기동: port $BASE_PORT"
 ( cd "$BASE_TREE" && env "$PORT_ENV=$BASE_PORT" bash -c "$DEV" ) >"$WORK/base.log" 2>&1 &
 BASE_PID=$!
-wait_ready "http://localhost:$BASE_PORT$READY_PATH" "$BASE_PID" "$WORK/base.log" || exit 1
+
+# 두 서버를 동시에 띄운 뒤 각각 준비될 때까지 기다린다 (콜드 빌드가 겹쳐서 진행된다)
+abort() {
+  local p
+  for p in "$BASE_PID" ${HEAD_PID:+"$HEAD_PID"}; do pkill -P "$p" 2>/dev/null || true; kill "$p" 2>/dev/null || true; done
+  exit 1
+}   # 한쪽이 실패하면 다른 쪽도 내린다
+[[ -n "$HEAD_PID" ]] && { wait_ready "http://localhost:$HEAD_PORT$READY_PATH" "$HEAD_PID" "$WORK/head.log" || abort; }
+wait_ready "http://localhost:$BASE_PORT$READY_PATH" "$BASE_PID" "$WORK/base.log" || abort
 
 cat >"$WORK/state.json" <<JSON
 {

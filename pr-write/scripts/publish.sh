@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# 이미지를 orphan 브랜치에 올리고 PR 코멘트를 갱신한다.
+# pr-ui-review가 만든 이미지를 orphan 브랜치에 올리고 PR 코멘트를 갱신한다.
 #
 #   publish.sh upload  --out-dir <dir> --pr <n> [--branch ui-review-assets]
+#                      (<dir>/manifest.json 이 가리키는 표시용 이미지만 올린다)
 #   publish.sh comment --pr <n> --body-file <md>
 #   publish.sh check                       # public/private 판별만
 #
@@ -14,13 +15,14 @@ MARKER="<!-- pr-ui-review -->"
 BRANCH="ui-review-assets"
 CMD="${1:-}"; shift || true
 
-OUT_DIR=""; PR=""; BODY_FILE=""
+OUT_DIR=""; PR=""; BODY_FILE=""; FORCE_LOCAL=false
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --out-dir) OUT_DIR="$2"; shift 2 ;;
     --pr) PR="$2"; shift 2 ;;
     --body-file) BODY_FILE="$2"; shift 2 ;;
     --branch) BRANCH="$2"; shift 2 ;;
+    --local) FORCE_LOCAL=true; shift ;;
     *) echo "알 수 없는 인자: $1" >&2; exit 2 ;;
   esac
 done
@@ -36,13 +38,25 @@ check)
 
 upload)
   [[ -n "$OUT_DIR" && -n "$PR" ]] || { echo "--out-dir, --pr 필수" >&2; exit 2; }
-  if [[ "$IS_PRIVATE" == "true" ]]; then
-    # private 레포는 raw.githubusercontent.com이 토큰 없이 404 → 코멘트에 이미지가 안 뜬다.
-    echo "{\"mode\":\"local\",\"private\":true,\"outDir\":\"$OUT_DIR\",\"reason\":\"private 레포는 raw URL 임베드가 불가능합니다\"}"
+  if [[ "$FORCE_LOCAL" == "true" ]]; then
+    # 이미지를 레포에 올리고 싶지 않을 때: 올리지 않고 경로만 돌려준다
+    echo "{\"mode\":\"local\",\"private\":$IS_PRIVATE,\"outDir\":\"$OUT_DIR\",\"reason\":\"--local 지정\"}"
     exit 0
   fi
+  # public: raw.githubusercontent.com 링크. private: raw 링크는 토큰 없이 404라 깨지므로,
+  # 같은 레포 안의 blob 링크(?raw=true)를 쓴다 — 레포 접근 권한이 있는 리뷰어에게는 로그인 상태로 렌더된다.
+  if [[ "$IS_PRIVATE" == "true" ]]; then
+    URL_BASE="https://github.com/$NWO/blob/$BRANCH"; URL_SUFFIX="?raw=true"
+  else
+    URL_BASE="https://raw.githubusercontent.com/$NWO/$BRANCH"; URL_SUFFIX=""
+  fi
 
-  SHA=$(git rev-parse --short=7 HEAD)
+  HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  MANIFEST="$OUT_DIR/manifest.json"
+  [[ -f "$MANIFEST" ]] || { echo "$MANIFEST 가 없습니다. pr-ui-review로 먼저 manifest를 만드세요" >&2; exit 2; }
+  # 경로 이름은 현재 HEAD가 아니라 캡처한 그 상태(manifest의 head sha)를 따른다
+  SHA=$(python3 -c "import json,sys;print(json.load(open(sys.argv[1]))['head']['sha'] or '')" "$MANIFEST")
+  [[ -n "$SHA" ]] || SHA=$(git rev-parse --short=7 HEAD)
   PREFIX="pr-${PR}/${SHA}"
   git fetch origin "$BRANCH" --quiet 2>/dev/null || true
   PARENT=$(git rev-parse --verify --quiet "refs/remotes/origin/$BRANCH" || true)
@@ -61,9 +75,9 @@ upload)
     git update-index --add --cacheinfo "100644,$blob,$PREFIX/$rel"
     MAPPING=$(printf '%s' "$MAPPING" | python3 -c "
 import json,sys
-m=json.load(sys.stdin); m['''$rel''']='https://raw.githubusercontent.com/$NWO/$BRANCH/$PREFIX/$rel'
+m=json.load(sys.stdin); m['''$rel''']='$URL_BASE/$PREFIX/$rel$URL_SUFFIX'
 print(json.dumps(m))")
-  done < <(find "$OUT_DIR" -maxdepth 1 -name '*.png' -print0 | sort -z)
+  done < <(python3 "$HERE/manifest-images.py" "$MANIFEST" "$OUT_DIR")
 
   TREE=$(git write-tree)
   MSG="ui-review: PR #$PR @ $SHA"
@@ -74,7 +88,7 @@ print(json.dumps(m))")
   fi
   git push --quiet origin "$COMMIT:refs/heads/$BRANCH"
 
-  echo "{\"mode\":\"remote\",\"private\":false,\"branch\":\"$BRANCH\",\"prefix\":\"$PREFIX\",\"urls\":$MAPPING}"
+  echo "{\"mode\":\"remote\",\"private\":$IS_PRIVATE,\"branch\":\"$BRANCH\",\"prefix\":\"$PREFIX\",\"urls\":$MAPPING}"
   ;;
 
 comment)

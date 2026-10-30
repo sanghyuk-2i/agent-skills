@@ -32,7 +32,9 @@ kill_tree() { # dev 서버는 자식 프로세스를 남기므로 프로세스 �
   kill -0 "$pid" 2>/dev/null || return 0
   pkill -P "$pid" 2>/dev/null || true
   kill "$pid" 2>/dev/null || true
-  sleep 1
+  # 정상 종료를 최대 2초까지만 기다린다 (고정 sleep 대신 종료 확인)
+  local i
+  for i in $(seq 20); do kill -0 "$pid" 2>/dev/null || break; sleep 0.1; done
   kill -9 "$pid" 2>/dev/null || true
   log "서버 종료: pid $pid"
 }

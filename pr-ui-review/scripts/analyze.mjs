@@ -1,14 +1,17 @@
 #!/usr/bin/env node
-// before/after PNG 두 장을 비교해 "실제로 달라진 영역"에만 번호 붙은 박스를 그린다.
+// before/after PNG 두 장을 비교해 "실제로 달라진 영역"을 찾는다. 이미지는 그리지 않는다.
 //
-//   node annotate.mjs --before b.png --after a.png --out-dir out --name checkout \
+//   node analyze.mjs --before b.png --after a.png --out-dir out --name checkout \
 //     [--threshold 0.1] [--min-area 400] [--max-boxes 8] [--merge-gap 24] [--no-crops]
 //
-// 산출물: <name>.before.annotated.png, <name>.after.annotated.png,
-//         <name>.sidebyside.png, <name>.box-N.png(크롭), <name>.json
-// stdout: 결과 JSON (에이전트가 그대로 읽는다)
+// 산출물: <name>.box-N.png(박스별 크롭), <name>.analysis.json
+// stdout: 분석 결과 JSON (에이전트가 그대로 읽는다)
 //
-// 픽셀 디코딩·비교·렌더링을 전부 Chromium 안에서 처리한다. canvas가 PNG를 디코딩하고
+// 분석과 렌더를 나눈 이유: 노이즈가 심하면 마스크를 고쳐 다시 캡처·분석하게 되는데,
+// 그때마다 큰 페이지 렌더(수 초)를 치르지 않기 위해서다. 크롭을 보고 박스가 맞다고 판단한 뒤에
+// render.mjs로 어노테이션 이미지를 만든다.
+//
+// 픽셀 디코딩·비교를 전부 Chromium 안에서 처리한다. canvas가 PNG를 디코딩하고
 // getImageData가 픽셀을 주므로 sharp/pngjs/pixelmatch 같은 네이티브 의존성이 필요 없다.
 // (data URI로 넘기는 이유: file:// 이미지는 canvas를 taint시켜 getImageData가 막힌다.)
 
@@ -21,6 +24,7 @@ const MAX_ANALYSIS_WIDTH = 1600; // 분석용 다운스케일 상한 (속도 + �
 const DILATE_RADIUS = 8; // 이미지 px. 글자 획 하나하나가 개별 박스가 되는 걸 막는다
 const WHOLE_PAGE_RATIO = 0.6; // 이 비율 넘게 바뀌면 개별 박스가 무의미
 const MAX_SHIFT = 400; // 세로 이동 보정 탐색 범위 (이미지 px)
+const MAX_SHIFT_X = 12; // 가로 미세 이동 보정 탐색 범위 (이미지 px). 글줄이 몇 px 옆으로 밀린 경우용
 
 function toDataUri(file) {
   const buf = fs.readFileSync(file);
@@ -29,7 +33,7 @@ function toDataUri(file) {
 
 // ── 브라우저 컨텍스트에서 실행되는 분석 ───────────────────────────────────────
 function analyzeInPage(opts) {
-  const { beforeUri, afterUri, threshold, minArea, maxBoxes, mergeGap, maxShift, maxAnalysisWidth, dilateRadius } =
+  const { beforeUri, afterUri, threshold, minArea, maxBoxes, mergeGap, maxShift, maxShiftX, maxAnalysisWidth, dilateRadius } =
     opts;
 
   const load = (src) =>
@@ -212,6 +216,71 @@ function analyzeInPage(opts) {
       return true;
     });
 
+    // ── 4.6 가로 미세 이동 보정 ──
+    // 글줄이 옆으로 1~수 px 밀렸을 뿐 내용이 같으면, 글자 획이 전부 diff로 잡혀 박스가 생기지만
+    // 리뷰어 눈에는 before/after가 똑같아 보인다. 작은 (dx, dy) 평행이동으로 겹치면 변경이 아니라 이동으로 분류한다.
+    // 이동 없이도 거의 같다면(실제로 글자 하나가 바뀐 것 등) 이동이 아니라 작은 변경이므로 박스로 남긴다.
+    //
+    // 분석용 다운스케일 이미지에서는 몇 px 이동이 소수 px가 되어 정렬이 안 맞는다 → 후보 박스만 원본 해상도로 다시 본다.
+    // 글자는 서브픽셀 위치가 달라지면 안티에일리어싱 농도가 바뀌므로 엄격한 색차(YIQ) 대신 채널 차이 상한을 쓴다.
+    // 허용치는 실측으로 잡았다: 서브픽셀 렌더 차이만 남는 같은 글줄은 0~2.2%, 같은 길이 글줄에서 단어 하나가 바뀐 경우는 약 3%.
+    // 그 사이(2.5%)에 둔다. 여유가 얇으니 바꾸기 전에 gen 케이스(이동/이동+수정/수정/색)로 다시 확인할 것.
+    const FINE_TOL = 0.025; // 평행이동 후 불일치가 2.5% 미만이어야 "같은 내용"
+    const FINE_GAIN = 0.25; // 그리고 이동 전 불일치의 1/4 이하여야 평행이동이 설명으로 충분
+    const FINE_CHANNEL_DELTA = 48;
+    const FINE_MAX_DY = 4; // 이미지 px. 가로 이동에 딸려오는 어긋남만 허용
+    const FINE_MAX_AREA = 400000; // 이미지 px². 이보다 큰 박스(이미지·섹션)는 글줄 이동이 아니다
+    const region = (img, x, y, w, h) => {
+      const c = document.createElement('canvas');
+      c.width = w; c.height = h;
+      const ctx = c.getContext('2d', { willReadFrequently: true });
+      ctx.drawImage(img, x, y, w, h, 0, 0, w, h);
+      return ctx.getImageData(0, 0, w, h).data;
+    };
+    boxes = boxes.filter((bx) => {
+      const ix0 = Math.max(0, Math.floor(bx.x0 / scale)), iy0 = Math.max(0, Math.floor(bx.y0 / scale));
+      const ix1 = Math.min(ow - 1, Math.ceil((bx.x1 + 1) / scale)), iy1 = Math.min(oh - 1, Math.ceil((bx.y1 + 1) / scale));
+      const bw_ = ix1 - ix0 + 1, bh_ = iy1 - iy0 + 1;
+      if (bw_ < 1 || bh_ < 1 || bw_ * bh_ > FINE_MAX_AREA) return true;
+      // 박스 + 탐색 여백을 한 번만 읽어 둔다
+      const rx = Math.max(0, ix0 - maxShiftX), ry = Math.max(0, iy0 - FINE_MAX_DY);
+      const rw = Math.min(ow, ix1 + 1 + maxShiftX) - rx, rh = Math.min(oh, iy1 + 1 + FINE_MAX_DY) - ry;
+      const PB = region(b, rx, ry, rw, rh), QA = region(a, rx, ry, rw, rh);
+      const mism = (dx, dy) => {
+        let total = 0, bad = 0;
+        for (let y = iy0; y <= iy1; y += 2) {
+          const sy = y - dy - ry;
+          if (sy < 0 || sy >= rh) return 1;
+          for (let x = ix0; x <= ix1; x += 2) {
+            const sx = x - dx - rx;
+            if (sx < 0 || sx >= rw) return 1;
+            const i = ((y - ry) * rw + (x - rx)) * 4, j = (sy * rw + sx) * 4;
+            total++;
+            if (
+              Math.abs(QA[i] - PB[j]) > FINE_CHANNEL_DELTA ||
+              Math.abs(QA[i + 1] - PB[j + 1]) > FINE_CHANNEL_DELTA ||
+              Math.abs(QA[i + 2] - PB[j + 2]) > FINE_CHANNEL_DELTA
+            ) bad++;
+          }
+        }
+        return total ? bad / total : 1;
+      };
+      const still = mism(0, 0);
+      if (still < FINE_TOL) return true;
+      let best = { f: 1, dx: 0, dy: 0 };
+      for (let dy = -FINE_MAX_DY; dy <= FINE_MAX_DY; dy++)
+        for (let dx = -maxShiftX; dx <= maxShiftX; dx++) {
+          if (dx === 0 && dy === 0) continue;
+          const f = mism(dx, dy);
+          if (f < best.f) best = { f, dx, dy };
+        }
+      if (best.f < FINE_TOL && best.f < still * FINE_GAIN) {
+        shifted.push({ ...bx, dx: best.dx, dy: best.dy }); // 둘 다 이미지 px
+        return false;
+      }
+      return true;
+    });
+
     // ── 5. 이미지 좌표로 환산 → 면적 필터 → 상위 N개 → 읽는 순서로 번호 ──
     const inv = 1 / scale;
     let out = boxes.map((bx) => {
@@ -239,62 +308,18 @@ function analyzeInPage(opts) {
         y: Math.round(s.y0 * inv),
         height: Math.round((s.y1 - s.y0 + 1) * inv),
         dy: s.dy,
+        ...(s.dx ? { dx: s.dx } : {}),
       }))
       .sort((p, q) => p.y - q.y);
     return result;
   });
 }
 
-// ── 오버레이 렌더용 HTML ─────────────────────────────────────────────────────
-function stageHtml(panels) {
-  const panel = (p) => `
-    <div class="panel">
-      ${p.label ? `<div class="label">${p.label}</div>` : ''}
-      <div class="frame" style="width:${p.width}px">
-        <img src="${p.uri}" width="${p.width}">
-        ${p.boxes
-          .map(
-            (b) => `<div class="box" style="left:${b.x}px;top:${b.y}px;width:${b.width}px;height:${b.height}px">
-                      <span class="badge">${b.n}</span>
-                    </div>`
-          )
-          .join('')}
-      </div>
-    </div>`;
-  return `<!doctype html><meta charset="utf-8">
-<style>
-  *{margin:0;padding:0;box-sizing:border-box}
-  body{background:#fff;font:600 28px/1.2 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
-  #stage{display:flex;gap:32px;align-items:flex-start;padding:0;background:#fff;width:max-content}
-  .panel{display:flex;flex-direction:column;gap:12px}
-  .label{color:#fff;background:#111;padding:10px 20px;border-radius:8px;align-self:flex-start;letter-spacing:.04em}
-  .frame{position:relative;line-height:0;outline:1px solid #e5e5e5}
-  .frame img{display:block}
-  .box{position:absolute;border:4px solid #ff2d55;border-radius:4px;
-       box-shadow:0 0 0 2px rgba(255,255,255,.9),0 0 0 6px rgba(255,45,85,.18)}
-  .badge{position:absolute;top:-18px;left:-18px;min-width:40px;height:40px;padding:0 8px;
-         display:flex;align-items:center;justify-content:center;
-         background:#ff2d55;color:#fff;border-radius:20px;font-size:24px;line-height:1;
-         box-shadow:0 2px 6px rgba(0,0,0,.3)}
-</style>
-<div id="stage">${panels.map(panel).join('')}</div>`;
-}
-
-async function shootStage(browser, panels, outFile) {
-  const page = await browser.newPage({ viewport: { width: 1200, height: 800 }, deviceScaleFactor: 1 });
-  await page.setContent(stageHtml(panels), { waitUntil: 'load' });
-  await page.evaluate(() =>
-    Promise.all(Array.from(document.images).map((i) => (i.complete ? null : i.decode().catch(() => null))))
-  );
-  await page.locator('#stage').screenshot({ path: outFile });
-  await page.close();
-}
-
 async function main() {
   const args = parseArgs();
   const beforeFile = args.before, afterFile = args.after;
   if (!beforeFile || !afterFile) {
-    console.error('사용법: annotate.mjs --before <png> --after <png> --out-dir <dir> --name <route>');
+    console.error('사용법: analyze.mjs --before <png> --after <png> --out-dir <dir> --name <route>');
     process.exit(2);
   }
   const outDir = args['out-dir'] || path.dirname(afterFile);
@@ -318,6 +343,7 @@ async function main() {
       maxBoxes: num(args['max-boxes'], 8),
       mergeGap: num(args['merge-gap'], 24),
       maxShift: num(args['max-shift'], MAX_SHIFT),
+      maxShiftX: num(args['max-shift-x'], MAX_SHIFT_X),
       maxAnalysisWidth: MAX_ANALYSIS_WIDTH,
       dilateRadius: DILATE_RADIUS,
       wholePageRatio: WHOLE_PAGE_RATIO,
@@ -328,26 +354,27 @@ async function main() {
     const files = {};
     const boxes = result.boxes;
 
-    files.before = path.join(outDir, `${name}.before.annotated.png`);
-    files.after = path.join(outDir, `${name}.after.annotated.png`);
-    files.sideBySide = path.join(outDir, `${name}.sidebyside.png`);
-
-    await shootStage(browser, [{ uri: beforeUri, width: result.sizes.before[0], boxes, label: null }], files.before);
-    await shootStage(browser, [{ uri: afterUri, width: result.sizes.after[0], boxes, label: null }], files.after);
-    await shootStage(
-      browser,
-      [
-        { uri: beforeUri, width: result.sizes.before[0], boxes, label: 'BEFORE' },
-        { uri: afterUri, width: result.sizes.after[0], boxes, label: 'AFTER' },
-      ],
-      files.sideBySide
-    );
-
     // 박스별 크롭 — 에이전트가 이 이미지를 직접 보고 변경 내용을 설명한다.
     if (!args['no-crops'] && boxes.length) {
       files.crops = [];
       const page2 = await browser.newPage({ viewport: { width: 800, height: 600 }, deviceScaleFactor: 1 });
       await page2.setContent('<!doctype html><meta charset="utf-8"><body>');
+      // 큰 이미지를 박스마다 다시 디코딩·전송하지 않도록 한 번만 올려둔다
+      await page2.evaluate(
+        ({ beforeUri, afterUri }) => {
+          const load = (src) =>
+            new Promise((res, rej) => {
+              const i = new Image();
+              i.onload = () => res(i);
+              i.onerror = rej;
+              i.src = src;
+            });
+          return Promise.all([load(beforeUri), load(afterUri)]).then(([bi, ai]) => {
+            window.__imgs = { bi, ai };
+          });
+        },
+        { beforeUri, afterUri }
+      );
       for (const b of boxes) {
         const pad = 24;
         const clip = {
@@ -356,34 +383,23 @@ async function main() {
           w: Math.min(ow, b.x + b.width + pad) - Math.max(0, b.x - pad),
           h: Math.min(oh, b.y + b.height + pad) - Math.max(0, b.y - pad),
         };
-        const uri = await page2.evaluate(
-          ({ beforeUri, afterUri, clip }) => {
-            const load = (src) =>
-              new Promise((res, rej) => {
-                const i = new Image();
-                i.onload = () => res(i);
-                i.onerror = rej;
-                i.src = src;
-              });
-            return Promise.all([load(beforeUri), load(afterUri)]).then(([bi, ai]) => {
-              const gap = 16, labelH = 28;
-              const c = document.createElement('canvas');
-              c.width = clip.w * 2 + gap;
-              c.height = clip.h + labelH;
-              const ctx = c.getContext('2d');
-              ctx.fillStyle = '#fff';
-              ctx.fillRect(0, 0, c.width, c.height);
-              ctx.fillStyle = '#111';
-              ctx.font = '600 18px sans-serif';
-              ctx.fillText('BEFORE', 0, 20);
-              ctx.fillText('AFTER', clip.w + gap, 20);
-              ctx.drawImage(bi, clip.x, clip.y, clip.w, clip.h, 0, labelH, clip.w, clip.h);
-              ctx.drawImage(ai, clip.x, clip.y, clip.w, clip.h, clip.w + gap, labelH, clip.w, clip.h);
-              return c.toDataURL('image/png');
-            });
-          },
-          { beforeUri, afterUri, clip }
-        );
+        const uri = await page2.evaluate((clip) => {
+          const { bi, ai } = window.__imgs;
+          const gap = 16, labelH = 28;
+          const c = document.createElement('canvas');
+          c.width = clip.w * 2 + gap;
+          c.height = clip.h + labelH;
+          const ctx = c.getContext('2d');
+          ctx.fillStyle = '#fff';
+          ctx.fillRect(0, 0, c.width, c.height);
+          ctx.fillStyle = '#111';
+          ctx.font = '600 18px sans-serif';
+          ctx.fillText('BEFORE', 0, 20);
+          ctx.fillText('AFTER', clip.w + gap, 20);
+          ctx.drawImage(bi, clip.x, clip.y, clip.w, clip.h, 0, labelH, clip.w, clip.h);
+          ctx.drawImage(ai, clip.x, clip.y, clip.w, clip.h, clip.w + gap, labelH, clip.w, clip.h);
+          return c.toDataURL('image/png');
+        }, clip);
         const file = path.join(outDir, `${name}.box-${b.n}.png`);
         fs.writeFileSync(file, Buffer.from(uri.split(',')[1], 'base64'));
         files.crops.push(file);
@@ -392,12 +408,13 @@ async function main() {
     }
 
     result.name = name;
+    result.inputs = { before: path.resolve(beforeFile), after: path.resolve(afterFile) };
     result.files = files;
   } finally {
     await browser.close();
   }
 
-  fs.writeFileSync(path.join(outDir, `${name}.json`), JSON.stringify(result, null, 2));
+  fs.writeFileSync(path.join(outDir, `${name}.analysis.json`), JSON.stringify(result, null, 2));
   console.log(JSON.stringify(result, null, 2));
 }
 

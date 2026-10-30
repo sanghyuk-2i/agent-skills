@@ -1,0 +1,11 @@
+---
+description: 현재 브랜치의 커밋·diff를 읽고 일관된 형식의 PR 제목과 본문을 작성해 PR을 만들거나 갱신합니다. 변경 종류를 분류해 해당하는 모듈을 붙입니다 — UI가 바뀌면 화면 비교 결과(pr-ui-review의 manifest)를 PR 코멘트로 게시하고, 서버 코드가 바뀌면 API·DB·설정·배포 영향 섹션을 씁니다. 레포에 .github/pull_request_template.md가 있으면 그 양식을 채우고, 없으면 기본 양식을 씁니다. 제목은 레포의 커밋 관례를 따릅니다. "PR 만들어줘", "PR 설명 써줘", "PR 올려줘", "PR에 스크린샷 올려줘", "UI 리뷰 코멘트 달아줘" 같은 요청에 사용하세요. 화면을 새로 캡처·비교하는 일은 pr-ui-review의 몫입니다.
+globs:
+alwaysApply: false
+---
+
+# pr-write
+
+이 규칙과 관련된 요청이면, `{SKILL_PATH}/AGENTS.md`를 먼저 읽고 그 안의 순서를 그대로 따른다. 그 문서가 가리키는 `references/**/*.md`, `scripts/*`도 전부 `{SKILL_PATH}` 아래에 있다.
+
+> 설치 시 `{SKILL_PATH}`를 이 스킬 폴더의 실제 경로로 바꿔둔다 (예: `.cursor/skills/pr-write`).

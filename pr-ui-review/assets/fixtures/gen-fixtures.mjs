@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// annotate.mjs 검증용 고정 이미지 생성기.
+// analyze.mjs 검증용 고정 이미지 생성기.
 // 딱 한 군데(결제 버튼)만 다른 before/after 한 쌍을 만든다 → 박스가 정확히 1개 나와야 한다.
 //   node gen-fixtures.mjs
 
